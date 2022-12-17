@@ -35,6 +35,7 @@
 
 
 SDL_KMSDRM_MODULE(LIBDRM)
+SDL_KMSDRM_SYM(int,drmIoctl,(int fd, unsigned long request, void *arg))
 SDL_KMSDRM_SYM(void,drmModeFreeResources,(drmModeResPtr ptr))
 SDL_KMSDRM_SYM(void,drmModeFreeFB,(drmModeFBPtr ptr))
 SDL_KMSDRM_SYM(void,drmModeFreeCrtc,(drmModeCrtcPtr ptr))
@@ -52,6 +53,7 @@ SDL_KMSDRM_SYM(int,drmModeAddFB2,(int fd, uint32_t width, uint32_t height,
                          uint32_t pixel_format, const uint32_t bo_handles[4],
                          const uint32_t pitches[4], const uint32_t offsets[4],
                          uint32_t *buf_id, uint32_t flags))
+SDL_KMSDRM_SYM(int,drmUnmap,(drmAddress address, drmSize size))
 
 SDL_KMSDRM_SYM(int,drmModeRmFB,(int fd, uint32_t bufferId))
 SDL_KMSDRM_SYM(drmModeFBPtr,drmModeGetFB,(int fd, uint32_t buf))
@@ -96,7 +98,7 @@ SDL_KMSDRM_SYM(int,drmModeSetPlane,(int fd, uint32_t plane_id, uint32_t crtc_id,
                                     uint32_t src_x, uint32_t src_y,
                                     uint32_t src_w, uint32_t src_h))
 /* Planes stuff ends. */
-
+#if SDL_VIDEO_OPENGL_EGL
 SDL_KMSDRM_MODULE(GBM)
 SDL_KMSDRM_SYM(int,gbm_device_is_format_supported,(struct gbm_device *gbm,
                                                    uint32_t format, uint32_t usage))
@@ -122,7 +124,7 @@ SDL_KMSDRM_SYM(struct gbm_surface *,gbm_surface_create,(struct gbm_device *gbm,
 SDL_KMSDRM_SYM(void,gbm_surface_destroy,(struct gbm_surface *surf))
 SDL_KMSDRM_SYM(struct gbm_bo *,gbm_surface_lock_front_buffer,(struct gbm_surface *surf))
 SDL_KMSDRM_SYM(void,gbm_surface_release_buffer,(struct gbm_surface *surf, struct gbm_bo *bo))
-
+#endif
 
 #undef SDL_KMSDRM_MODULE
 #undef SDL_KMSDRM_SYM

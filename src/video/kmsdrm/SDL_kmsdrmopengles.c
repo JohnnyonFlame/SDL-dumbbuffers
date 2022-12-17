@@ -21,7 +21,7 @@
 
 #include "../../SDL_internal.h"
 
-#if SDL_VIDEO_DRIVER_KMSDRM
+#if SDL_VIDEO_DRIVER_KMSDRM && SDL_VIDEO_OPENGL_EGL
 
 #include "SDL_log.h"
 
@@ -35,6 +35,95 @@
 #endif
 
 /* EGL implementation of SDL OpenGL support */
+/* Init the Vulkan-INCOMPATIBLE stuff:
+   Reopen FD, create gbm dev, create dumb buffer and setup display plane.
+   This is to be called late, in WindowCreate(), and ONLY if this is not
+   a Vulkan window.
+   We are doing this so late to allow Vulkan to work if we build a VK window.
+   These things are incompatible with Vulkan, which accesses the same resources
+   internally so they must be free when trying to build a Vulkan surface.
+*/
+int KMSDRM_GBMInit(_THIS, SDL_DisplayData *dispdata)
+{
+    SDL_VideoData *viddata = (SDL_VideoData *)_this->driverdata;
+    int ret = 0;
+
+    if (!SDL_KMSDRM_HAVE_GBM) {
+        return SDL_SetError("Couldn't create gbm device.");
+    }
+
+    /* Reopen the FD! */
+    viddata->drm_fd = open(viddata->devpath, O_RDWR | O_CLOEXEC);
+
+    /* Set the FD we just opened as current DRM master. */
+    KMSDRM_drmSetMaster(viddata->drm_fd);
+
+    /* Create the GBM device. */
+    viddata->gbm_dev = KMSDRM_gbm_create_device(viddata->drm_fd);
+    if (!viddata->gbm_dev) {
+        ret = SDL_SetError("Couldn't create gbm device.");
+    }
+
+    viddata->gbm_init = SDL_TRUE;
+    viddata->dumb_init = SDL_FALSE;
+
+    return ret;
+}
+
+void KMSDRM_GBMDestroySurfaces(_THIS, SDL_Window *window)
+{
+    SDL_WindowData *windata = ((SDL_WindowData *)window->driverdata);
+    SDL_EGL_MakeCurrent(_this, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+
+    if (windata->egl_surface != EGL_NO_SURFACE) {
+        SDL_EGL_DestroySurface(_this, windata->egl_surface);
+        windata->egl_surface = EGL_NO_SURFACE;
+    }
+
+    /***************************/
+    /* Destroy the GBM buffers */
+    /***************************/
+
+    if (windata->bo) {
+        KMSDRM_gbm_surface_release_buffer(windata->gs, windata->bo);
+        windata->bo = NULL;
+    }
+
+    if (windata->next_bo) {
+        KMSDRM_gbm_surface_release_buffer(windata->gs, windata->next_bo);
+        windata->next_bo = NULL;
+    }
+
+    /***************************/
+    /* Destroy the GBM surface */
+    /***************************/
+
+    if (windata->gs) {
+        KMSDRM_gbm_surface_destroy(windata->gs);
+        windata->gs = NULL;
+    }
+}
+
+/* Deinit the Vulkan-incompatible KMSDRM stuff. */
+void KMSDRM_GBMDeinit(_THIS, SDL_DisplayData *dispdata)
+{
+    SDL_VideoData *viddata = ((SDL_VideoData *)_this->driverdata);
+
+    /* Destroy GBM device. GBM surface is destroyed by DestroySurfaces(),
+       already called when we get here. */
+    if (viddata->gbm_dev) {
+        KMSDRM_gbm_device_destroy(viddata->gbm_dev);
+        viddata->gbm_dev = NULL;
+    }
+
+    /* Finally close DRM FD. May be reopen on next non-vulkan window creation. */
+    if (viddata->drm_fd >= 0) {
+        close(viddata->drm_fd);
+        viddata->drm_fd = -1;
+    }
+
+    viddata->gbm_init = SDL_FALSE;
+}
 
 void KMSDRM_GLES_DefaultProfileConfig(_THIS, int *mask, int *major, int *minor)
 {
@@ -82,6 +171,60 @@ SDL_EGL_CreateContext_impl(KMSDRM)
         return SDL_SetError("Only swap intervals of 0 or 1 are supported");
     }
 
+    return 0;
+}
+
+int KMSDRM_GLES_InitWindow(_THIS, SDL_Window *window)
+{
+    int ret;
+    SDL_DisplayData *dispdata = (SDL_DisplayData *)SDL_GetDisplayForWindow(window)->driverdata;
+    SDL_VideoDisplay *display = SDL_GetDisplayForWindow(window);
+    NativeDisplayType egl_display;
+
+    /* After SDL_CreateWindow, most SDL2 programs will do SDL_CreateRenderer(),
+       which will in turn call GL_CreateRenderer() or GLES2_CreateRenderer().
+       In order for the GL_CreateRenderer() or GLES2_CreateRenderer() call to
+       succeed without an unnecessary window re-creation, we must:
+       -Mark the window as being OPENGL
+       -Load the GL library (which can't be done until the GBM device has been
+       created, so we have to do it here instead of doing it on VideoInit())
+       and mark it as loaded by setting gl_config.driver_loaded to 1.
+       So if you ever see KMSDRM_CreateWindow() to be called two times in tests,
+       don't be shy to debug GL_CreateRenderer() or GLES2_CreateRenderer()
+       to find out why!
+    */
+
+    /* Reopen FD, create gbm dev, setup display plane, etc,.
+        but only when we come here for the first time,
+        and only if it's not a VK window. */
+    ret = KMSDRM_GBMInit(_this, dispdata);
+    if (ret != 0) {
+        return SDL_SetError("Can't init GBM on window creation.");
+    }
+
+    /* Manually load the GL library. KMSDRM_EGL_LoadLibrary() has already
+       been called by SDL_CreateWindow() but we don't do anything there,
+       our KMSDRM_EGL_LoadLibrary() is a dummy precisely to be able to load it here.
+       If we let SDL_CreateWindow() load the lib, it would be loaded
+       before we call KMSDRM_GBMInit(), causing all GLES programs to fail. */
+    if (!_this->egl_data) {
+        egl_display = (NativeDisplayType)((SDL_VideoData *)_this->driverdata)->gbm_dev;
+        if (SDL_EGL_LoadLibrary(_this, NULL, egl_display, EGL_PLATFORM_GBM_MESA) < 0) {
+            /* Try again with OpenGL ES 2.0 */
+            _this->gl_config.profile_mask = SDL_GL_CONTEXT_PROFILE_ES;
+            _this->gl_config.major_version = 2;
+            _this->gl_config.minor_version = 0;
+            if (SDL_EGL_LoadLibrary(_this, NULL, egl_display, EGL_PLATFORM_GBM_MESA) < 0) {
+                return SDL_SetError("Can't load EGL/GL library on window creation.");
+            }
+        }
+
+        _this->gl_config.driver_loaded = 1;
+    }
+
+    /* Create the cursor BO for the display of this window,
+        now that we know this is not a VK window. */
+    KMSDRM_CreateCursorBO(display);
     return 0;
 }
 

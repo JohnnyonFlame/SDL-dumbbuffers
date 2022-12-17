@@ -23,7 +23,7 @@
 #ifndef SDL_kmsdrmopengles_h_
 #define SDL_kmsdrmopengles_h_
 
-#if SDL_VIDEO_DRIVER_KMSDRM
+#if SDL_VIDEO_DRIVER_KMSDRM && SDL_VIDEO_OPENGL_EGL
 
 #include "../SDL_sysvideo.h"
 #include "../SDL_egl_c.h"
@@ -38,10 +38,11 @@ extern void KMSDRM_GLES_DefaultProfileConfig(_THIS, int *mask, int *major, int *
 extern int KMSDRM_GLES_SetSwapInterval(_THIS, int interval);
 extern int KMSDRM_GLES_LoadLibrary(_THIS, const char *path);
 extern SDL_GLContext KMSDRM_GLES_CreateContext(_THIS, SDL_Window *window);
+extern int KMSDRM_GLES_InitWindow(_THIS, SDL_Window *window);
 extern int KMSDRM_GLES_SwapWindow(_THIS, SDL_Window *window);
 extern int KMSDRM_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context);
 
-#endif /* SDL_VIDEO_DRIVER_KMSDRM */
+#endif /* SDL_VIDEO_DRIVER_KMSDRM && SDL_VIDEO_OPENGL_EGL */
 
 #endif /* SDL_kmsdrmopengles_h_ */
 

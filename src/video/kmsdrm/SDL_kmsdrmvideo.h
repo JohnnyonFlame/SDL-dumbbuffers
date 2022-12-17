@@ -28,6 +28,9 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <libdrm/drm.h>
+#include <libdrm/drm_fourcc.h>
+#include <xf86drm.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <gbm.h>
@@ -43,6 +46,7 @@ typedef struct SDL_VideoData
 
     SDL_bool video_init;             /* Has VideoInit succeeded? */
     SDL_bool vulkan_mode;            /* Are we in Vulkan mode? One VK window is enough to be. */
+    SDL_bool opengl_mode;            /* Are we in OpenGL mode? One GL window is enough to be. */
     SDL_bool async_pageflip_support; /* Does the hardware support async. pageflips? */
 
     SDL_Window **windows;
@@ -52,7 +56,7 @@ typedef struct SDL_VideoData
     /* Even if we have several displays, we only have to
        open 1 FD and create 1 gbm device. */
     SDL_bool gbm_init;
-
+    SDL_bool dumb_init;
 } SDL_VideoData;
 
 typedef struct SDL_DisplayModeData
@@ -82,6 +86,14 @@ typedef struct SDL_DisplayData
     SDL_bool default_cursor_init;
 } SDL_DisplayData;
 
+typedef struct KMSDRM_DumbBuffer {
+    struct drm_mode_destroy_dumb req_destroy_dumb;
+    struct drm_mode_create_dumb req_create;
+    struct drm_mode_map_dumb req_map;
+    Uint32 buf_id;
+    void *map;
+} KMSDRM_DumbBuffer;
+
 typedef struct SDL_WindowData
 {
     SDL_VideoData *viddata;
@@ -89,9 +101,18 @@ typedef struct SDL_WindowData
        what supports the EGL surface on the driver side, so all these surfaces and buffers
        are expected to be here, in the struct pointed by SDL_Window driverdata pointer:
        this one. So don't try to move these to dispdata!  */
+
+#if SDL_VIDEO_OPENGL_EGL
     struct gbm_surface *gs;
     struct gbm_bo *bo;
     struct gbm_bo *next_bo;
+#endif
+
+    // Maybe union these with the gs/bo/next_bo definitions?
+    KMSDRM_DumbBuffer dumb_buffers[2];
+    int front_buffer;
+    int back_buffer;
+    SDL_Surface *framebuffer;
 
     SDL_bool waiting_for_flip;
     SDL_bool double_buffer;
@@ -111,6 +132,7 @@ int KMSDRM_CreateSurfaces(_THIS, SDL_Window *window);
 KMSDRM_FBInfo *KMSDRM_FBFromBO(_THIS, struct gbm_bo *bo);
 KMSDRM_FBInfo *KMSDRM_FBFromBO2(_THIS, struct gbm_bo *bo, int w, int h);
 SDL_bool KMSDRM_WaitPageflip(_THIS, SDL_WindowData *windata);
+void KMSDRM_CreateCursorBO(SDL_VideoDisplay *display);
 
 /****************************************************************************/
 /* SDL_VideoDevice functions declaration                                    */
@@ -143,6 +165,7 @@ SDL_bool KMSDRM_GetWindowWMInfo(_THIS, SDL_Window * window,
                              struct SDL_SysWMinfo *info);
 
 /* OpenGL/OpenGL ES functions */
+#if SDL_VIDEO_OPENGL_EGL
 int KMSDRM_GLES_LoadLibrary(_THIS, const char *path);
 void *KMSDRM_GLES_GetProcAddress(_THIS, const char *proc);
 void KMSDRM_GLES_UnloadLibrary(_THIS);
@@ -150,8 +173,19 @@ SDL_GLContext KMSDRM_GLES_CreateContext(_THIS, SDL_Window *window);
 int KMSDRM_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context);
 int KMSDRM_GLES_SetSwapInterval(_THIS, int interval);
 int KMSDRM_GLES_GetSwapInterval(_THIS);
+int KMSDRM_GLES_InitWindow(_THIS, SDL_Window *window);
 int KMSDRM_GLES_SwapWindow(_THIS, SDL_Window *window);
 void KMSDRM_GLES_DeleteContext(_THIS, SDL_GLContext context);
+void KMSDRM_GBMDeinit(_THIS, SDL_DisplayData *dispdata);
+void KMSDRM_GBMDestroySurfaces(_THIS, SDL_Window *window);
+#endif
+
+/* Dumb Buffer functions */
+int KMSDRM_Dumb_CreateDumbBuffers(_THIS, SDL_Window *window);
+int KMSDRM_Dumb_CreateWindowFramebuffer(_THIS, SDL_Window * window, Uint32 * format, void ** pixels, int *pitch);
+int KMSDRM_Dumb_UpdateWindowFramebuffer(_THIS, SDL_Window * window, const SDL_Rect * rects, int numrects);
+void KMSDRM_Dumb_DestroyWindowFramebuffer(_THIS, SDL_Window * window);
+void KMSDRM_Dumb_DestroySurfaces(_THIS, SDL_Window *window);
 
 #endif /* __SDL_KMSDRMVIDEO_H__ */
 

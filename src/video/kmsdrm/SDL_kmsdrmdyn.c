@@ -135,7 +135,7 @@ int SDL_KMSDRM_LoadSymbols(void)
 #define SDL_KMSDRM_SYM_CONST(type, name) KMSDRM_##name = *(SDL_DYNKMSDRMCONST_##name *)KMSDRM_GetSym(#name, thismod);
 #include "SDL_kmsdrmsym.h"
 
-        if ((SDL_KMSDRM_HAVE_LIBDRM) && (SDL_KMSDRM_HAVE_GBM)) {
+        if ((SDL_KMSDRM_HAVE_LIBDRM)) {
             /* all required symbols loaded. */
             SDL_ClearError();
         } else {

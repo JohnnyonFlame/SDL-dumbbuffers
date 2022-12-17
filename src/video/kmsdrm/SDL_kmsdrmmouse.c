@@ -59,7 +59,7 @@ static SDL_Cursor *KMSDRM_CreateDefaultCursor(void)
 {
     return SDL_CreateCursor(default_cdata, default_cmask, DEFAULT_CWIDTH, DEFAULT_CHEIGHT, DEFAULT_CHOTX, DEFAULT_CHOTY);
 }
-
+#if SDL_VIDEO_OPENGL_EGL
 /* Given a display's driverdata, destroy the cursor BO for it.
    To be called from KMSDRM_DestroyWindow(), as that's where we
    destroy the driverdata for the window's display. */
@@ -207,7 +207,17 @@ cleanup:
     }
     return ret;
 }
+#else
+static int KMSDRM_DumpCursorToBO(SDL_VideoDisplay *display, SDL_Cursor *cursor)
+{
+    return 0;
+}
 
+static int KMSDRM_RemoveCursorFromBO(SDL_VideoDisplay *display)
+{
+    return 0;
+}
+#endif
 /* This is only for freeing the SDL_cursor.*/
 static void KMSDRM_FreeCursor(SDL_Cursor *cursor)
 {

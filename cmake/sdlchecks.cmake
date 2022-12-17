@@ -1258,24 +1258,28 @@ macro(CheckRPI)
 endmacro()
 
 # Requires:
-# - EGL
 # - PkgCheckModules
 # Optional:
+# - EGL
 # - SDL_KMSDRM_SHARED opt
 # - HAVE_SDL_LOADSO opt
 macro(CheckKMSDRM)
   if(SDL_KMSDRM)
-    pkg_check_modules(PKG_KMSDRM libdrm gbm egl)
-    if(PKG_KMSDRM_FOUND AND HAVE_OPENGL_EGL)
-      target_link_directories(sdl-build-options INTERFACE ${PKG_KMSDRM_LIBRARY_DIRS})
-      target_include_directories(sdl-build-options INTERFACE "${PKG_KMSDRM_INCLUDE_DIRS}")
+    pkg_check_modules(PKG_KMSDRM libdrm)
+    if(PKG_KMSDRM_FOUND)
+      if (HAVE_OPENGL_EGL)
+        pkg_check_modules(PKG_KMSDRM_EGL gbm egl)
+      endif()
+
+      target_link_directories(sdl-build-options INTERFACE ${PKG_KMSDRM_LIBRARY_DIRS} ${PKG_KMSDRM_EGL_LIBRARY_DIRS})
+      target_include_directories(sdl-build-options INTERFACE "${PKG_KMSDRM_INCLUDE_DIRS}" "${PKG_KMSDRM_EGL_INCLUDE_DIRS}")
       set(HAVE_KMSDRM TRUE)
       set(HAVE_SDL_VIDEO TRUE)
 
       file(GLOB KMSDRM_SOURCES ${SDL2_SOURCE_DIR}/src/video/kmsdrm/*.c)
       list(APPEND SOURCE_FILES ${KMSDRM_SOURCES})
 
-      list(APPEND EXTRA_CFLAGS ${PKG_KMSDRM_CFLAGS})
+      list(APPEND EXTRA_CFLAGS ${PKG_KMSDRM_CFLAGS} ${PKG_KMSDRM_EGL_CFLAGS})
 
       set(SDL_VIDEO_DRIVER_KMSDRM 1)
 
@@ -1284,9 +1288,11 @@ macro(CheckKMSDRM)
       endif()
       if(SDL_KMSDRM_SHARED AND HAVE_SDL_LOADSO)
         FindLibraryAndSONAME(drm LIBDIRS ${PKG_KMSDRM_LIBRARY_DIRS})
-        FindLibraryAndSONAME(gbm LIBDIRS ${PKG_KMSDRM_LIBRARY_DIRS})
         set(SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC "\"${DRM_LIB_SONAME}\"")
-        set(SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC_GBM "\"${GBM_LIB_SONAME}\"")
+        if (HAVE_OPENGL_EGL)
+          FindLibraryAndSONAME(gbm LIBDIRS ${PKG_KMSDRM_LIBRARY_DIRS})
+          set(SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC_GBM "\"${GBM_LIB_SONAME}\"")
+        endif()
         set(HAVE_KMSDRM_SHARED TRUE)
       else()
         list(APPEND EXTRA_LIBS ${PKG_KMSDRM_LIBRARIES})

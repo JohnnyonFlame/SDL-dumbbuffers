@@ -24,6 +24,8 @@
 
 #include "../../SDL_internal.h"
 
+#include <libdrm/drm.h>
+#include <libdrm/drm_fourcc.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <gbm.h>
@@ -34,6 +36,11 @@ extern "C" {
 
 int SDL_KMSDRM_LoadSymbols(void);
 void SDL_KMSDRM_UnloadSymbols(void);
+
+/* Externalize if modules were properly loaded */
+#define SDL_KMSDRM_MODULE(modname)       extern int SDL_KMSDRM_HAVE_##modname;
+#include "SDL_kmsdrmsym.h"
+#undef SDL_KMSDRM_MODULE
 
 /* Declare all the function pointers and wrappers... */
 #define SDL_KMSDRM_SYM(rc, fn, params)        \
