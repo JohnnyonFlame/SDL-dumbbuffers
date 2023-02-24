@@ -383,6 +383,7 @@ KMSDRM_FBFromBO(_THIS, struct gbm_bo *bo)
 
     return fb_info;
 }
+#endif
 
 static void KMSDRM_FlipHandler(int fd, unsigned int frame, unsigned int sec, unsigned int usec, void *data)
 {
@@ -472,7 +473,7 @@ KMSDRM_WaitPageflip(_THIS, SDL_WindowData *windata)
 
     return SDL_TRUE;
 }
-#endif
+
 /* Given w, h and refresh rate, returns the closest DRM video mode
    available on the DRM connector of the display.
    We use the SDL mode list (which we filled in KMSDRM_GetDisplayModes)
