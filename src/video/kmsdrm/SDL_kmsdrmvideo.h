@@ -112,6 +112,7 @@ typedef struct SDL_WindowData
     KMSDRM_DumbBuffer dumb_buffers[2];
     int front_buffer;
     int back_buffer;
+    SDL_bool set_crtc;
     SDL_Surface *framebuffer;
 
     SDL_bool waiting_for_flip;

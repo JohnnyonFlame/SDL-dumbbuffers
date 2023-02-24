@@ -92,6 +92,8 @@ int KMSDRM_Dumb_CreateDumbBuffers(_THIS, SDL_Window *window)
 
     windata->back_buffer = 0;
     windata->front_buffer = 1;
+    windata->set_crtc = SDL_TRUE;
+    windata->waiting_for_flip = SDL_FALSE;
     viddata->dumb_init = SDL_TRUE;
 
     return 0;
@@ -101,7 +103,7 @@ kmsdrm_fail_createfb:
         req_create = &buffer->req_create;
         req_map = &buffer->req_map;
         req_destroy_dumb = &buffer->req_destroy_dumb;
-        
+
         if (buffer->buf_id > 0)
             KMSDRM_drmModeRmFB(viddata->drm_fd, buffer->buf_id);
 
@@ -149,17 +151,24 @@ int KMSDRM_Dumb_UpdateWindowFramebuffer(_THIS, SDL_Window * window, const SDL_Re
     KMSDRM_DumbBuffer *buffer = &windata->dumb_buffers[windata->back_buffer];
     SDL_Surface *surf = windata->framebuffer;
     int swap, ret;
+    SDL_bool set_crtc = windata->set_crtc;
 
     if (viddata->opengl_mode)
         return SDL_SetError("Cannot mix dumb buffers with OpenGL.");
 
     /* Recreate the GBM / EGL surfaces if the display mode has changed */
     if (windata->egl_surface_dirty) {
+        set_crtc = SDL_TRUE;
         KMSDRM_CreateSurfaces(_this, window);
     }
 
     if (!viddata->dumb_init)
         return -1;
+
+    if (!KMSDRM_WaitPageflip(_this, windata)) {
+        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Wait for pageflip failed");
+        /* fall-tru intentionally */
+    }
 
     for (int i = 0; i < window->h; i++) {
         Uint32 *row_db = buffer->map + (i * buffer->req_create.pitch);
@@ -167,9 +176,19 @@ int KMSDRM_Dumb_UpdateWindowFramebuffer(_THIS, SDL_Window * window, const SDL_Re
         SDL_memcpy(row_db, row_fb, window->w * surf->format->BytesPerPixel);
     }
 
-    ret = KMSDRM_drmModeSetCrtc(viddata->drm_fd, dispdata->crtc->crtc_id,
-                                windata->dumb_buffers[windata->back_buffer].buf_id, 
+    if (set_crtc) {
+        ret = KMSDRM_drmModeSetCrtc(viddata->drm_fd, dispdata->crtc->crtc_id,
+                                windata->dumb_buffers[windata->back_buffer].buf_id,
                                 0, 0, &dispdata->connector->connector_id, 1, &dispdata->mode);
+        windata->set_crtc = SDL_FALSE;
+    } else {
+        ret = KMSDRM_drmModePageFlip(viddata->drm_fd, dispdata->crtc->crtc_id,
+                                windata->dumb_buffers[windata->back_buffer].buf_id,
+                                DRM_MODE_PAGE_FLIP_EVENT, &windata->waiting_for_flip);
+       if (ret == 0) {
+           windata->waiting_for_flip = SDL_TRUE;
+       }
+    }
 
     swap = windata->back_buffer;
     windata->back_buffer = windata->front_buffer;
